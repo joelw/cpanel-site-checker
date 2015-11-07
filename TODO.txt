@@ -1,3 +1,4 @@
 * Implement comparison mechanism for page changes
 * Record in an output file rather than the program log that domains have been redirected away or expired
 * Check that logging to file works
+* Sanitise variables passed to PhantomJS
