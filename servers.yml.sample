@@ -1,0 +1,9 @@
+---
+:config:
+  :output_dir: .
+  :log: log.txt
+:servers:
+- :host: vps1.example.com
+  :hash: 123456789abcdef
+- :host: vps2.example.com
+  :hash: abcdef123456789

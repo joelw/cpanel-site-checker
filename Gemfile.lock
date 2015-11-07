@@ -1,0 +1,21 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    faraday (0.9.2)
+      multipart-post (>= 1.2, < 3)
+    faraday_middleware (0.9.2)
+      faraday (>= 0.7.4, < 0.10)
+    json (1.8.3)
+    lumberg (3.1.0)
+      faraday (~> 0.9.0)
+      faraday_middleware (~> 0.9.0)
+      json (>= 1.8.2)
+    multipart-post (2.0.0)
+    phantomjs.rb (2.1.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  lumberg
+  phantomjs.rb
