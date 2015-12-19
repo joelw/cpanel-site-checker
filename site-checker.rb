@@ -11,18 +11,14 @@ require 'fileutils'
 class WhmChecker
 
   def initialize(config = {})
-
     config[:output_dir] ||= '.'
     @outputdir = config[:output_dir]
-    @log = config[:logfile].nil? ? Logger.new(STDOUT) : File.open(config[:logfile], 'a')
-
+    @log = Logger.new(config[:logfile] || STDOUT)
     @dns = Resolv::DNS.new
-    
     @ip_whitelist = []
   end
 
   def check_accounts(host, hash, date = Time.now.strftime("%Y%m%d"))
-
     @log.info "Checking host #{host}"
     server = Lumberg::Whm::Server.new(
       host: host,
