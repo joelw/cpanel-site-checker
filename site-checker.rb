@@ -15,10 +15,12 @@ class WhmChecker
     @outputdir = config[:output_dir]
     @log = Logger.new(config[:logfile] || STDOUT)
     @dns = Resolv::DNS.new
+    @directory_format = config[:directory_format] || "%Y%m%d"
     @ip_whitelist = []
+    @lastrun_file = config[:lastrun_file] || "lastrun.txt"
   end
 
-  def check_accounts(host, hash, date = Time.now.strftime("%Y%m%d"))
+  def check_accounts(host, hash, date = Time.now.strftime(@directory_format))
     @log.info "Checking host #{host}"
     server = Lumberg::Whm::Server.new(
       host: host,
@@ -33,11 +35,15 @@ class WhmChecker
 
     # Get a list of IP addresses we'll check
     ip_addr = server.list_ips
-    @ip_whitelist = ip_addr[:params].collect {|a| a[:ip]}
+
+    if ip_addr[:params].is_a? Array
+      @ip_whitelist = ip_addr[:params].collect {|a| a[:ip]}
+    else
+      @ip_whitelist = [ip_addr[:params][:ip]]
+    end      
 
     result[:params][:acct].each do |ac|
       next if ac[:suspended]
-
 
       addon = Lumberg::Cpanel::AddonDomain.new(
         server:       server,  # An instance of Lumberg::Server
@@ -45,24 +51,21 @@ class WhmChecker
       )
 
       domlist = addon.list
-
       domains = []
-
       @log.info "Checking user #{ac[:user]}:"
-
       domains << ac[:domain] if check_in_whitelist(ac[:domain])
-
       domlist[:params][:data].each do |ad|
         domains << ad[:domain] if check_in_whitelist(ad[:domain])
       end
-
       domains.each do |dom|
         @log.info " - #{dom}"
         fetch_page(ac[:user], dom, directory)
       end
-
     end
 
+    f = File.open(@lastrun_file, 'a')
+    f.puts directory
+    f.close
   end
 
   def check_in_whitelist(domain)
@@ -85,32 +88,34 @@ class WhmChecker
     uri = URI.parse("http://#{dom}")
 
     # SSL?
-    response = fetch_url uri
+    begin
+      response = fetch_url uri
 
-    # Dump status and body
-    f = File.new("#{directory}/#{user}-#{dom}.html", "w")
-    f.puts response.code
-    f.puts response.body
-    f.close
+      # Dump status and body
+      f = File.new("#{directory}/#{user}-#{dom}.html", "w")
+      f.puts response.code
+      f.puts response.body
+      f.close
 
-    # Dump image
+      # Dump image
 
-    js = "
-      var page = require('webpage').create();
-      page.viewportSize = {
-        width: 1400,
-        height: 1500
-      };
+      js = "
+        var page = require('webpage').create();
+        page.viewportSize = {
+          width: 1400,
+          height: 1500
+        };
 
-      page.open('#{uri.to_s}', function() {
-        page.render('#{directory}/#{user}-#{dom}.jpg');
-        phantom.exit();
-      });
-  "
+        page.open('#{uri.to_s}', function() {
+          page.render('#{directory}/#{user}-#{dom}.jpg');
+          phantom.exit();
+        });
+    "
 
-    Phantomjs.inline(js)
-
-
+      Phantomjs.inline(js)
+    rescue StandardError => ex
+      @log.warn "Crashed while fetching #{dom}: " + ex.to_s
+    end
   end
 
   def fetch_url(uri, limit = 5)
