@@ -14,7 +14,9 @@ class WhmChecker
   def initialize(config = {})
     config[:output_dir] ||= '.'
     @outputdir = config[:output_dir]
-    @log = Logger.new(config[:logfile] || STDOUT)
+    @log = Logger.new(config[:logfile] || STDOUT, formatter: proc {|severity, datetime, progname, msg|
+      "#{datetime} #{msg}\n"
+    })
     @dns = Resolv::DNS.new
     @directory_format = config[:directory_format] || "%Y%m%d"
     @ip_whitelist = []
@@ -23,10 +25,12 @@ class WhmChecker
     selenium_options = Selenium::WebDriver::Chrome::Options.new
     selenium_options.add_argument('--headless')
     @driver = Selenium::WebDriver.for :chrome, options: selenium_options
+
+    @read_timeout = 30
+    @open_timeout = 30
   end
 
   def check_accounts(host, hash, date = Time.now.strftime(@directory_format))
-    @log.info "Checking host #{host}"
     server = Lumberg::Whm::Server.new(
       host: host,
       hash: hash
@@ -52,24 +56,40 @@ class WhmChecker
       @ip_whitelist = [ip_addr[:params][:ip]]
     end      
 
-    result[:params][:acct].each do |ac|
-      next if ac[:suspended]
+    result[:params][:acct].each do |acct|
+      next if acct[:suspended]
 
       addon = Lumberg::Cpanel::AddonDomain.new(
         server:       server,  # An instance of Lumberg::Server
-        api_username: ac[:user]  # User whose cPanel we'll be interacting with
+        api_username: acct[:user]  # User whose cPanel we'll be interacting with
       )
 
-      domlist = addon.list
+      domlist = []
       domains = []
-      @log.info "Checking user #{ac[:user]}:"
-      domains << ac[:domain] if check_in_whitelist(ac[:domain])
-      domlist[:params][:data].each do |ad|
-        domains << ad[:domain] if check_in_whitelist(ad[:domain])
+
+      begin
+        domlist = addon.list[:params][:data]
+      rescue StandardError => ex
+        @log.warn "host=#{host} user=#{acct[:user]} error=could_not_fetch_addons"
       end
+
+      domlist.unshift(acct).each do |account_domain|
+        result, message = check_in_whitelist(account_domain[:domain])
+        if result
+          domains << account_domain[:domain]
+        else
+          @log.warn "host=#{host} user=#{acct[:user]} domain=#{account_domain[:domain]} code=#{message}"
+        end
+
+      end
+
       domains.each do |dom|
-        @log.info " - #{dom}"
-        fetch_page(ac[:user], dom, directory)
+        result = fetch_page(acct[:user], dom, directory)
+        log = "host=#{host} user=#{acct[:user]} domain=#{dom}"
+        log = log + " code=#{result[:code]}" if result.has_key? :code
+        log = log + " location=#{result[:location]}" if result.has_key? :location
+        log = log + " digest=#{result[:digest]}" if result.has_key? :digest
+        @log.info(log)
       end
     end
 
@@ -78,19 +98,17 @@ class WhmChecker
     f.close
   end
 
-  def check_in_whitelist(domain)
+  def check_in_whitelist(dom)
     begin
-      ip = @dns.getaddress(domain)
+      ip = @dns.getaddress(dom)
     rescue Resolv::ResolvError
-      @log.warn "Skipping unresolvable #{domain}"
-      return false
+      return false, "unresolvable"
     end
 
     if @ip_whitelist.include? ip.to_s
-      true
+      return true, nil
     else
-      @log.warn "Skipping non-whitelisted #{domain}"
-      false
+      return false, "not_whitelisted"
     end
   end
 
@@ -98,12 +116,15 @@ class WhmChecker
     uri = URI.parse("http://#{dom}")
 
     if File.exist?("#{directory}/#{user}-#{dom}.html") && File.exist?("#{directory}/#{user}-#{dom}.png")
-      @log.info "Skipping proceesed domain #{dom}"
-      return
+      return {code: "skipped"}
     end
 
     begin
       location, response = fetch_url uri
+
+      if response == 0
+        return {location: location, code: "too_many_redirects"}
+      end
 
       # Dump status and body
       f = File.new("#{directory}/#{user}-#{dom}.html", "w")
@@ -114,33 +135,43 @@ class WhmChecker
       end
       f.close
 
+      return if response.code == 521
+
       # Dump image
       @driver.navigate.to location
       @driver.manage.window.resize_to(1440, 2000)
       @driver.save_screenshot "#{directory}/#{user}-#{dom}.png"
+      return { location: location, code: response.code, digest: Digest::SHA2.hexdigest(response.body)  }
     rescue StandardError => ex
-      @log.warn "Crashed while fetching #{dom}: " + ex.to_s
+      return { code: ex.to_s }
     end
   end
 
   def fetch_url(uri, limit = 5)
     if limit == 0
-      @log.warn "Too many HTTP redirects"
-      return 0, nil
+      return 0, uri
     end
 
-    response = Net::HTTP.get_response(uri)
+    uri.path = "/" if uri.path.empty?
+    response = nil
+
+    begin
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = uri.instance_of?(URI::HTTPS)
+      http.read_timeout = @read_timeout
+      http.open_timeout = @open_timeout
+      response = http.start { |http| http.get(uri.path) }
+    rescue SocketError
+      return 521, nil  # Server down
+    end
 
     case response
-    when Net::HTTPSuccess then
-      return uri, response
     when Net::HTTPRedirection then
       location = response['location']
-      @log.info "Redirected to #{location}"
       l, r = fetch_url(URI(location), limit - 1)
       return l, r
     else
-      return location, response.value
+      return uri, response
     end
 
   end
