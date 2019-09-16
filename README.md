@@ -31,9 +31,8 @@ PHP or Apache upgrades, WordPress core and plugin upgrades, account moves betwee
 Installation
 ============
 
-* Install [PhantomJS](http://phantomjs.org/) (tested with 2.0.0)
 * bundle install 
-* Create an access keys in WHM
+* Create an API Token in WHM
 * Copy servers.yml.sample to servers.yml file and fill in the blanks
 
 

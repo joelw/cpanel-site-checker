@@ -3,7 +3,8 @@
 require 'lumberg'
 require 'net/http'
 require 'uri'
-require 'phantomjs'
+require "webdrivers"
+require "selenium-webdriver"
 require 'yaml'
 require 'fileutils'
 
@@ -18,6 +19,10 @@ class WhmChecker
     @directory_format = config[:directory_format] || "%Y%m%d"
     @ip_whitelist = []
     @lastrun_file = config[:lastrun_file] || "lastrun.txt"
+
+    selenium_options = Selenium::WebDriver::Chrome::Options.new
+    selenium_options.add_argument('--headless')
+    @driver = Selenium::WebDriver.for :chrome, options: selenium_options
   end
 
   def check_accounts(host, hash, date = Time.now.strftime(@directory_format))
@@ -35,6 +40,11 @@ class WhmChecker
 
     # Get a list of IP addresses we'll check
     ip_addr = server.list_ips
+
+    unless ip_addr[:message].nil?
+        @log.error "server.list_ips: #{ip_addr[:message]}"
+        exit
+    end
 
     if ip_addr[:params].is_a? Array
       @ip_whitelist = ip_addr[:params].collect {|a| a[:ip]}
@@ -98,21 +108,9 @@ class WhmChecker
       f.close
 
       # Dump image
-
-      js = "
-        var page = require('webpage').create();
-        page.viewportSize = {
-          width: 1400,
-          height: 1500
-        };
-
-        page.open('#{uri.to_s}', function() {
-          page.render('#{directory}/#{user}-#{dom}.jpg');
-          phantom.exit();
-        });
-    "
-
-      Phantomjs.inline(js)
+      @driver.navigate.to uri
+      @driver.manage.window.resize_to(1440, 2000)
+      @driver.save_screenshot "#{directory}/#{user}-#{dom}.png"
     rescue StandardError => ex
       @log.warn "Crashed while fetching #{dom}: " + ex.to_s
     end
