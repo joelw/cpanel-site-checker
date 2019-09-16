@@ -97,18 +97,25 @@ class WhmChecker
   def fetch_page(user, dom, directory)
     uri = URI.parse("http://#{dom}")
 
-    # SSL?
+    if File.exist?("#{directory}/#{user}-#{dom}.html") && File.exist?("#{directory}/#{user}-#{dom}.png")
+      @log.info "Skipping proceesed domain #{dom}"
+      return
+    end
+
     begin
-      response = fetch_url uri
+      location, response = fetch_url uri
 
       # Dump status and body
       f = File.new("#{directory}/#{user}-#{dom}.html", "w")
-      f.puts response.code
-      f.puts response.body
+      f.puts location
+      unless response.nil?
+        f.puts response.code
+        f.puts response.body
+      end
       f.close
 
       # Dump image
-      @driver.navigate.to uri
+      @driver.navigate.to location
       @driver.manage.window.resize_to(1440, 2000)
       @driver.save_screenshot "#{directory}/#{user}-#{dom}.png"
     rescue StandardError => ex
@@ -119,20 +126,21 @@ class WhmChecker
   def fetch_url(uri, limit = 5)
     if limit == 0
       @log.warn "Too many HTTP redirects"
-      return ''
+      return 0, nil
     end
 
     response = Net::HTTP.get_response(uri)
 
     case response
     when Net::HTTPSuccess then
-      response
+      return uri, response
     when Net::HTTPRedirection then
       location = response['location']
       @log.info "Redirected to #{location}"
-      fetch_url(URI(location), limit - 1)
+      l, r = fetch_url(URI(location), limit - 1)
+      return l, r
     else
-      response.value
+      return location, response.value
     end
 
   end
