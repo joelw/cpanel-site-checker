@@ -3,18 +3,22 @@
 import os
 import glob
 import logging
+import time
+import colorsys
 from PIL import Image
-
+from skimage.metrics import structural_similarity as ssim
+import numpy as np
 
 class ScreenshotManager:
     """Manages screenshot capture, resizing, and comparison."""
-    
-    # Threshold for considering screenshots identical (percentage difference)
-    SCREENSHOT_IDENTICAL_THRESHOLD = 0.01
-    
+
+    # SSIM threshold - values closer to 1.0 mean more similar
+    # 0.95 means images must be 95% structurally similar to be considered "identical"
+    SSIM_THRESHOLD = 0.95
+
     def __init__(self, driver, output_dir='.'):
         """Initialize screenshot manager.
-        
+
         Args:
             driver: Selenium WebDriver instance
             output_dir: Base output directory
@@ -22,38 +26,39 @@ class ScreenshotManager:
         self.driver = driver
         self.output_dir = output_dir
         self.log = logging.getLogger(__name__)
-    
+
     def capture_screenshot(self, url, output_path, width=1440, height=2000):
         """Capture a screenshot of a web page.
-        
+
         Args:
             url: URL to capture
             output_path: Path to save screenshot
             width: Browser window width
             height: Browser window height
         """
-        self.driver.get(url)
         self.driver.set_window_size(width, height)
+        self.driver.get(url)
+        time.sleep(5)  # Wait for images to fade in
         self.driver.save_screenshot(output_path)
-    
+
     def resize_screenshot(self, image_path, width=500):
         """Resize screenshot to thumbnail with specified width, maintaining aspect ratio.
-        
+
         Args:
             image_path: Path to image file
             width: Target width in pixels
-        
+
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             img = Image.open(image_path)
-            
+
             # Guard against division by zero
             if img.width == 0:
                 self.log.error(f"Invalid image width (0) for {image_path}")
                 return False
-            
+
             # Calculate new height to maintain aspect ratio
             aspect_ratio = img.height / img.width
             new_height = int(width * aspect_ratio)
@@ -65,73 +70,104 @@ class ScreenshotManager:
         except Exception as e:
             self.log.error(f"Failed to resize screenshot {image_path}: {e}")
             return False
-    
+
     def find_previous_screenshot(self, domain, current_directory):
         """Find the most recent screenshot for a domain from previous runs.
-        
+
         Args:
             domain: Domain name
             current_directory: Current run's directory (to exclude)
-        
+
         Returns:
             str: Path to previous screenshot or None if not found
         """
         # Get all subdirectories in output_dir
         pattern = os.path.join(self.output_dir, '*', '*', f'*-{domain}.png')
         matching_files = glob.glob(pattern)
-        
+
         # Filter out the current directory's file
         matching_files = [f for f in matching_files if not f.startswith(current_directory)]
-        
+
         if not matching_files:
             return None
-        
-        # Sort by modification time, most recent first
-        matching_files.sort(key=os.path.getmtime, reverse=True)
+
+        # Sort by date extracted from path (YYYYMMDDnn), most recent first
+        def extract_date(path):
+            try:
+                # Extract date from path like './2025122801/...'
+                parts = path.split(os.sep)
+                for part in parts:
+                    # Check for YYYYMMDDnn (10 chars) or legacy YYYYMMDD (8 chars)
+                    if (len(part) == 10 or len(part) == 8) and part[:8].isdigit():
+                        return part
+                return '0000000000'  # Fallback for files without date pattern
+            except:
+                return '0000000000'
+
+        matching_files.sort(key=extract_date, reverse=True)
         return matching_files[0]
-    
-    def compare_screenshots(self, img1_path, img2_path):
-        """Compare two screenshots and return the percentage of different pixels.
-        
+
+    def compare_screenshots(self, img1_path, img2_path, diff_output_path=None):
+        """Compare two screenshots and optionally create a diff image.
+
         Args:
-            img1_path: Path to the new screenshot (always resized to 500px width)
-            img2_path: Path to the previous screenshot (may be old format or resized)
-        
+            img1_path: Path to first (newer) screenshot
+            img2_path: Path to second (older) screenshot
+            diff_output_path: Optional path to save diff image
+
         Returns:
-            float: Percentage of different pixels, or None if comparison failed
+            float: Difference percentage (0-100) or None if comparison failed
         """
         try:
             img1 = Image.open(img1_path)
             img2 = Image.open(img2_path)
-            
+
             # Ensure both images are the same size
-            # img2 is the older screenshot which may have been captured before resize feature
-            # img1 is the new screenshot which is always 500px wide
             if img1.size != img2.size:
-                # Resize img2 to match img1 (the new resized format)
                 img2 = img2.resize(img1.size, Image.LANCZOS)
-            
-            # Convert to RGB if needed (in case of RGBA or other formats)
-            if img1.mode != 'RGB':
-                img1 = img1.convert('RGB')
-            if img2.mode != 'RGB':
-                img2 = img2.convert('RGB')
-            
-            # Get pixel data
-            pixels1 = list(img1.getdata())
-            pixels2 = list(img2.getdata())
-            
-            # Count different pixels
-            different_pixels = sum(1 for p1, p2 in zip(pixels1, pixels2) if p1 != p2)
-            total_pixels = len(pixels1)
-            
-            # Calculate percentage
-            if total_pixels > 0:
-                diff_percentage = (different_pixels / total_pixels) * 100
-            else:
-                diff_percentage = 0
-            
-            return diff_percentage
+
+            # Convert to grayscale for SSIM comparison
+            gray1 = img1.convert("L")
+            gray2 = img2.convert("L")
+
+            # Convert to numpy arrays
+            arr1 = np.array(gray1)
+            arr2 = np.array(gray2)
+
+            # Calculate SSIM
+            similarity_index, diff_image = ssim(arr1, arr2, full=True)
+
+            # Create diff image if requested and images are different
+            if diff_output_path and similarity_index < self.SSIM_THRESHOLD:
+                # Convert diff_image from float to uint8
+                diff_image = (diff_image * 255).astype(np.uint8)
+
+                # Convert original to RGB for overlay
+                img1_rgb = img1.convert("RGB")
+                img1_array = np.array(img1_rgb)
+
+                # Create red overlay where differences exist
+                # diff_image ranges from 0 (different) to 255 (same)
+                # Invert so differences are highlighted
+                mask = 255 - diff_image
+
+                # Create red overlay (semi-transparent)
+                red_overlay = np.zeros_like(img1_array)
+                red_overlay[:, :, 0] = mask  # Red channel
+
+                # Blend with alpha
+                alpha = 0.6
+                result = img1_array.astype(float)
+                result[:, :, 0] = (1 - alpha) * result[:, :, 0] + alpha * red_overlay[
+                    :, :, 0
+                ]
+                result = result.astype(np.uint8)
+
+                # Save diff image
+                diff_img = Image.fromarray(result)
+                diff_img.save(diff_output_path)
+
+            return similarity_index
         except Exception as e:
             self.log.error(f"Failed to compare screenshots: {e}")
             return None

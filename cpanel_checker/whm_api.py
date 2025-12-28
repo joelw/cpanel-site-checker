@@ -6,10 +6,10 @@ import logging
 
 class WhmApiClient:
     """Client for interacting with WHM API."""
-    
+
     def __init__(self, host, hash_key, read_timeout=30):
         """Initialize WHM API client.
-        
+
         Args:
             host: WHM server hostname
             hash_key: WHM API token/hash key
@@ -22,13 +22,13 @@ class WhmApiClient:
         }
         self.read_timeout = read_timeout
         self.log = logging.getLogger(__name__)
-    
+
     def list_accounts(self):
         """List all cPanel accounts on the server.
-        
+
         Returns:
             list: List of account dictionaries
-        
+
         Raises:
             Exception: If API call fails
         """
@@ -41,20 +41,20 @@ class WhmApiClient:
             )
             response.raise_for_status()
             result = response.json()
-            
-            if 'data' in result and 'acct' in result['data']:
-                return result['data']['acct']
+
+            if 'acct' in result:
+                return result['acct']
             return []
         except Exception as e:
             self.log.error(f"Failed to list accounts: {e}")
             raise
-    
+
     def list_ips(self):
         """List all IP addresses on the server.
-        
+
         Returns:
             list: List of IP addresses
-        
+
         Raises:
             Exception: If API call fails
         """
@@ -67,9 +67,9 @@ class WhmApiClient:
             )
             response.raise_for_status()
             ip_result = response.json()
-            
-            if 'data' in ip_result and 'result' in ip_result['data']:
-                ip_list = ip_result['data']['result']
+
+            if 'result' in ip_result:
+                ip_list = ip_result['result']
                 if isinstance(ip_list, list):
                     return [item['ip'] for item in ip_list]
                 else:
@@ -78,13 +78,13 @@ class WhmApiClient:
         except Exception as e:
             self.log.error(f"Failed to list IPs: {e}")
             raise
-    
+
     def list_addon_domains(self, username):
         """List addon domains for a specific cPanel account.
-        
+
         Args:
             username: cPanel username
-        
+
         Returns:
             list: List of addon domain dictionaries
         """
@@ -103,7 +103,7 @@ class WhmApiClient:
             )
             response.raise_for_status()
             addon_result = response.json()
-            
+
             if 'cpanelresult' in addon_result and 'data' in addon_result['cpanelresult']:
                 return addon_result['cpanelresult']['data']
             return []
