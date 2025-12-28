@@ -14,6 +14,7 @@ from selenium.webdriver.chrome.service import Service
 from urllib.parse import urlparse, urljoin
 import socket
 import time
+import urllib3
 
 
 class WhmChecker:
@@ -217,7 +218,7 @@ class WhmChecker:
             self.driver.set_window_size(1440, 2000)
             self.driver.save_screenshot(png_file)
             
-            digest = hashlib.sha256(response.text.encode()).hexdigest()
+            digest = hashlib.sha256(response.content).hexdigest()
             return {
                 'location': location,
                 'code': response.status_code,
@@ -247,9 +248,15 @@ class WhmChecker:
             
             return url, response
         except socket.error:
-            return url, type('Response', (), {'status_code': 521})()
+            # Return None response with 521 status to indicate server down
+            class MockResponse:
+                status_code = 521
+            return url, MockResponse()
         except Exception as e:
-            return url, type('Response', (), {'status_code': str(e)})()
+            # Return None response with error message as status
+            class MockResponse:
+                status_code = str(e)
+            return url, MockResponse()
 
 
 def main():
@@ -263,7 +270,6 @@ def main():
         config = yaml.safe_load(f)
     
     # Disable SSL warnings for self-signed certificates
-    import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     whm = WhmChecker(config.get('config', {}))
