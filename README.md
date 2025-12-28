@@ -31,8 +31,22 @@ PHP or Apache upgrades, WordPress core and plugin upgrades, account moves betwee
 Installation
 ============
 
-* bundle install 
+* pip install -r requirements.txt
 * Create an API Token in WHM
 * Copy servers.yml.sample to servers.yml file and fill in the blanks
+
+Usage
+=====
+
+Run the script:
+```bash
+python3 site-checker.py
+```
+
+Or make it executable and run directly:
+```bash
+chmod +x site-checker.py
+./site-checker.py
+```
 
 
