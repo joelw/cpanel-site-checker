@@ -196,6 +196,12 @@ class WhmChecker:
         """Resize screenshot to thumbnail with specified width, maintaining aspect ratio."""
         try:
             img = Image.open(image_path)
+            
+            # Guard against division by zero
+            if img.width == 0:
+                self.log.error(f"Invalid image width (0) for {image_path}")
+                return False
+            
             # Calculate new height to maintain aspect ratio
             aspect_ratio = img.height / img.width
             new_height = int(width * aspect_ratio)
@@ -209,7 +215,10 @@ class WhmChecker:
             return False
     
     def find_previous_screenshot(self, domain, current_directory):
-        """Find the most recent screenshot for a domain from previous runs."""
+        """Find the most recent screenshot for a domain from previous runs.
+        
+        Expects directory structure: output_dir/date/host/username-domain.png
+        """
         # Parse the current directory to get the base path
         base_output_dir = self.output_dir
         
@@ -234,6 +243,7 @@ class WhmChecker:
             img2 = Image.open(img2_path)
             
             # Ensure both images are the same size
+            # This handles cases where previous screenshots were captured before resize feature
             if img1.size != img2.size:
                 # Resize img2 to match img1 if they differ
                 img2 = img2.resize(img1.size, Image.LANCZOS)
@@ -304,10 +314,11 @@ class WhmChecker:
                 diff_percentage = self.compare_screenshots(png_file, previous_screenshot)
                 
                 if diff_percentage is not None:
-                    if diff_percentage == 0:
-                        # Screenshots are identical, delete the new one
+                    # Use a small epsilon for floating-point comparison
+                    if diff_percentage < 0.01:
+                        # Screenshots are identical or nearly identical, delete the new one
                         os.remove(png_file)
-                        self.log.info(f"domain={domain} screenshot_diff=0.00% action=deleted_identical")
+                        self.log.info(f"domain={domain} screenshot_diff={diff_percentage:.2f}% action=deleted_identical")
                     else:
                         self.log.info(f"domain={domain} screenshot_diff={diff_percentage:.2f}%")
             
