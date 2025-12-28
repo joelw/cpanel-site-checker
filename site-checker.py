@@ -309,6 +309,7 @@ class WhmChecker:
             # Find previous screenshot and compare
             previous_screenshot = self.find_previous_screenshot(domain, directory)
             diff_percentage = None
+            screenshot_kept = True
             
             if previous_screenshot:
                 diff_percentage = self.compare_screenshots(png_file, previous_screenshot)
@@ -318,6 +319,7 @@ class WhmChecker:
                     if diff_percentage < 0.01:
                         # Screenshots are identical or nearly identical, delete the new one
                         os.remove(png_file)
+                        screenshot_kept = False
                         self.log.info(f"domain={domain} screenshot_diff={diff_percentage:.2f}% action=deleted_identical")
                     else:
                         self.log.info(f"domain={domain} screenshot_diff={diff_percentage:.2f}%")
@@ -329,7 +331,8 @@ class WhmChecker:
                 'digest': digest
             }
             
-            if diff_percentage is not None:
+            # Only include screenshot_diff if screenshot was kept
+            if diff_percentage is not None and screenshot_kept:
                 result['screenshot_diff'] = f"{diff_percentage:.2f}%"
             
             return result
