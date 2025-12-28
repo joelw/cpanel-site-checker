@@ -31,7 +31,7 @@ PHP or Apache upgrades, WordPress core and plugin upgrades, account moves betwee
 Installation
 ============
 
-* pip install -r requirements.txt
+* uv pip install -r requirements.txt
 * Create an API Token in WHM
 * Copy servers.yml.sample to servers.yml file and fill in the blanks
 
