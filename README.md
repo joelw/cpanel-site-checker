@@ -6,12 +6,12 @@ currently does the following:
 
 * Enumerates all accounts and domains on a list of cPanel servers
 * Skips any domains that don't resolve in DNS to the that particular server
-* Retrieves the content of the web site and logs it into a file
-* Saves a screenshot of the site using PhantomJS
+* Retrieves the text content of the web site and logs it into a file
+* Saves a screenshot of the site
+* Compare the contents of each web site with its previous snapshot
 
 It will eventually be extended to:
 
-* Compare the contents of each web site with its previous snapshot
 * If a significant difference is encountered, generate an email that contains an alert, as well as
   the before and after screenshots
 
@@ -31,8 +31,7 @@ PHP or Apache upgrades, WordPress core and plugin upgrades, account moves betwee
 Installation
 ============
 
-* pip install -r requirements.txt
-* Create an API Token in WHM
+* Create an API Token in WHM - not entirely sure which permissions are needed yet
 * Copy servers.yml.sample to servers.yml file and fill in the blanks
 
 Usage
@@ -40,7 +39,7 @@ Usage
 
 Run the script:
 ```bash
-python3 site-checker.py
+uv run site-checker.py
 ```
 
 Or make it executable and run directly:
