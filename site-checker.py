@@ -15,6 +15,8 @@ from urllib.parse import urlparse, urljoin
 import socket
 import time
 import urllib3
+from PIL import Image
+import glob
 
 
 class WhmChecker:
@@ -171,6 +173,8 @@ class WhmChecker:
                     log_msg += f" location={result['location']}"
                 if 'digest' in result:
                     log_msg += f" digest={result['digest']}"
+                if 'screenshot_diff' in result:
+                    log_msg += f" screenshot_diff={result['screenshot_diff']}"
                 self.log.info(log_msg)
         
         # Write to lastrun file
@@ -187,6 +191,77 @@ class WhmChecker:
             return True, None
         else:
             return False, "not_whitelisted"
+    
+    def resize_screenshot(self, image_path, width=500):
+        """Resize screenshot to thumbnail with specified width, maintaining aspect ratio."""
+        try:
+            img = Image.open(image_path)
+            # Calculate new height to maintain aspect ratio
+            aspect_ratio = img.height / img.width
+            new_height = int(width * aspect_ratio)
+            # Resize the image
+            img_resized = img.resize((width, new_height), Image.LANCZOS)
+            # Save back to the same file
+            img_resized.save(image_path)
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to resize screenshot {image_path}: {e}")
+            return False
+    
+    def find_previous_screenshot(self, domain, current_directory):
+        """Find the most recent screenshot for a domain from previous runs."""
+        # Parse the current directory to get the base path
+        base_output_dir = self.output_dir
+        
+        # Get all subdirectories in output_dir
+        pattern = os.path.join(base_output_dir, '*', '*', f'*-{domain}.png')
+        matching_files = glob.glob(pattern)
+        
+        # Filter out the current directory's file
+        matching_files = [f for f in matching_files if not f.startswith(current_directory)]
+        
+        if not matching_files:
+            return None
+        
+        # Sort by modification time, most recent first
+        matching_files.sort(key=os.path.getmtime, reverse=True)
+        return matching_files[0]
+    
+    def compare_screenshots(self, img1_path, img2_path):
+        """Compare two screenshots and return the percentage of different pixels."""
+        try:
+            img1 = Image.open(img1_path)
+            img2 = Image.open(img2_path)
+            
+            # Ensure both images are the same size
+            if img1.size != img2.size:
+                # Resize img2 to match img1 if they differ
+                img2 = img2.resize(img1.size, Image.LANCZOS)
+            
+            # Convert to RGB if needed (in case of RGBA or other formats)
+            if img1.mode != 'RGB':
+                img1 = img1.convert('RGB')
+            if img2.mode != 'RGB':
+                img2 = img2.convert('RGB')
+            
+            # Get pixel data
+            pixels1 = list(img1.getdata())
+            pixels2 = list(img2.getdata())
+            
+            # Count different pixels
+            different_pixels = sum(1 for p1, p2 in zip(pixels1, pixels2) if p1 != p2)
+            total_pixels = len(pixels1)
+            
+            # Calculate percentage
+            if total_pixels > 0:
+                diff_percentage = (different_pixels / total_pixels) * 100
+            else:
+                diff_percentage = 0
+            
+            return diff_percentage
+        except Exception as e:
+            self.log.error(f"Failed to compare screenshots: {e}")
+            return None
     
     def fetch_page(self, user, domain, directory):
         url = f"http://{domain}"
@@ -218,12 +293,35 @@ class WhmChecker:
             self.driver.set_window_size(1440, 2000)
             self.driver.save_screenshot(png_file)
             
+            # Resize screenshot to 500px width thumbnail
+            self.resize_screenshot(png_file, width=500)
+            
+            # Find previous screenshot and compare
+            previous_screenshot = self.find_previous_screenshot(domain, directory)
+            diff_percentage = None
+            
+            if previous_screenshot:
+                diff_percentage = self.compare_screenshots(png_file, previous_screenshot)
+                
+                if diff_percentage is not None:
+                    if diff_percentage == 0:
+                        # Screenshots are identical, delete the new one
+                        os.remove(png_file)
+                        self.log.info(f"domain={domain} screenshot_diff=0.00% action=deleted_identical")
+                    else:
+                        self.log.info(f"domain={domain} screenshot_diff={diff_percentage:.2f}%")
+            
             digest = hashlib.sha256(response.content).hexdigest()
-            return {
+            result = {
                 'location': location,
                 'code': response.status_code,
                 'digest': digest
             }
+            
+            if diff_percentage is not None:
+                result['screenshot_diff'] = f"{diff_percentage:.2f}%"
+            
+            return result
         except Exception as ex:
             return {'code': str(ex)}
     
