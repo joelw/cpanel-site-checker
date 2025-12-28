@@ -20,6 +20,9 @@ import glob
 
 
 class WhmChecker:
+    # Threshold for considering screenshots identical (percentage difference)
+    SCREENSHOT_IDENTICAL_THRESHOLD = 0.01
+    
     def __init__(self, config=None):
         if config is None:
             config = {}
@@ -219,11 +222,8 @@ class WhmChecker:
         
         Expects directory structure: output_dir/date/host/username-domain.png
         """
-        # Parse the current directory to get the base path
-        base_output_dir = self.output_dir
-        
         # Get all subdirectories in output_dir
-        pattern = os.path.join(base_output_dir, '*', '*', f'*-{domain}.png')
+        pattern = os.path.join(self.output_dir, '*', '*', f'*-{domain}.png')
         matching_files = glob.glob(pattern)
         
         # Filter out the current directory's file
@@ -237,15 +237,21 @@ class WhmChecker:
         return matching_files[0]
     
     def compare_screenshots(self, img1_path, img2_path):
-        """Compare two screenshots and return the percentage of different pixels."""
+        """Compare two screenshots and return the percentage of different pixels.
+        
+        Args:
+            img1_path: Path to the new screenshot (always resized to 500px width)
+            img2_path: Path to the previous screenshot (may be old format or resized)
+        """
         try:
             img1 = Image.open(img1_path)
             img2 = Image.open(img2_path)
             
             # Ensure both images are the same size
-            # This handles cases where previous screenshots were captured before resize feature
+            # img2 is the older screenshot which may have been captured before resize feature
+            # img1 is the new screenshot which is always 500px wide
             if img1.size != img2.size:
-                # Resize img2 to match img1 if they differ
+                # Resize img2 to match img1 (the new resized format)
                 img2 = img2.resize(img1.size, Image.LANCZOS)
             
             # Convert to RGB if needed (in case of RGBA or other formats)
@@ -315,8 +321,8 @@ class WhmChecker:
                 diff_percentage = self.compare_screenshots(png_file, previous_screenshot)
                 
                 if diff_percentage is not None:
-                    # Use a small epsilon for floating-point comparison
-                    if diff_percentage < 0.01:
+                    # Use threshold to determine if screenshots are identical
+                    if diff_percentage < self.SCREENSHOT_IDENTICAL_THRESHOLD:
                         # Screenshots are identical or nearly identical, delete the new one
                         os.remove(png_file)
                         screenshot_kept = False
