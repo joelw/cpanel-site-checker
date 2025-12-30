@@ -9,6 +9,5 @@ dependencies = [
     "pillow>=8.4.0",
     "pyyaml>=6.0.1",
     "requests>=2.27.1",
-    "scikit-image>=0.17.2",
     "selenium>=3.141.0",
 ]

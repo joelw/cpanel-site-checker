@@ -153,7 +153,8 @@ class ScreenshotManager:
                 if max_diff > 0:
                     diff_normalized = (diff / max_diff * 255).astype(np.uint8)
                 else:
-                    diff_normalized = diff.astype(np.uint8)
+                    # Images are identical, all differences are zero
+                    diff_normalized = np.zeros_like(diff, dtype=np.uint8)
 
                 # Create red overlay where differences exist
                 # Average across color channels to get overall difference
