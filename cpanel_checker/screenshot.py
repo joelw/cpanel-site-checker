@@ -131,7 +131,7 @@ class ScreenshotManager:
             hash2 = imagehash.phash(img2)
 
             # Calculate hash distance (0 = identical, higher = more different)
-            hash_distance = hash1 - hash2
+            hash_distance = int(hash1 - hash2)
 
             # Create diff image if requested and images are different
             if diff_output_path and hash_distance > self.HASH_DISTANCE_THRESHOLD:
