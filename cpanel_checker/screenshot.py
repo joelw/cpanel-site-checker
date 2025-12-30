@@ -6,15 +6,16 @@ import logging
 import time
 import colorsys
 from PIL import Image
-from skimage.metrics import structural_similarity as ssim
+import imagehash
 import numpy as np
 
 class ScreenshotManager:
     """Manages screenshot capture, resizing, and comparison."""
 
-    # SSIM threshold - values closer to 1.0 mean more similar
-    # 0.95 means images must be 95% structurally similar to be considered "identical"
-    SSIM_THRESHOLD = 0.95
+    # Perceptual hash distance threshold - lower values mean more similar
+    # Hash distance of 5 or less is considered "identical" for perceptual hash
+    # This is more robust to imperceptible changes in photographs than SSIM
+    HASH_DISTANCE_THRESHOLD = 5
 
     def __init__(self, driver, output_dir='.'):
         """Initialize screenshot manager.
@@ -108,7 +109,10 @@ class ScreenshotManager:
         return matching_files[0]
 
     def compare_screenshots(self, img1_path, img2_path, diff_output_path=None):
-        """Compare two screenshots and optionally create a diff image.
+        """Compare two screenshots using perceptual hashing and optionally create a diff image.
+
+        Uses perceptual hash (phash) which is robust to imperceptible changes in photographs.
+        Hash distance is used as a metric: lower values mean more similar images.
 
         Args:
             img1_path: Path to first (newer) screenshot
@@ -116,58 +120,60 @@ class ScreenshotManager:
             diff_output_path: Optional path to save diff image
 
         Returns:
-            float: Difference percentage (0-100) or None if comparison failed
+            int: Hash distance (0 = identical, higher = more different) or None if comparison failed
         """
         try:
             img1 = Image.open(img1_path)
             img2 = Image.open(img2_path)
 
-            # Ensure both images are the same size
-            if img1.size != img2.size:
-                img2 = img2.resize(img1.size, Image.LANCZOS)
+            # Calculate perceptual hashes
+            hash1 = imagehash.phash(img1)
+            hash2 = imagehash.phash(img2)
 
-            # Convert to grayscale for SSIM comparison
-            gray1 = img1.convert("L")
-            gray2 = img2.convert("L")
-
-            # Convert to numpy arrays
-            arr1 = np.array(gray1)
-            arr2 = np.array(gray2)
-
-            # Calculate SSIM
-            similarity_index, diff_image = ssim(arr1, arr2, full=True)
+            # Calculate hash distance (0 = identical, higher = more different)
+            hash_distance = hash1 - hash2
 
             # Create diff image if requested and images are different
-            if diff_output_path and similarity_index < self.SSIM_THRESHOLD:
-                # Convert diff_image from float to uint8
-                diff_image = (diff_image * 255).astype(np.uint8)
+            if diff_output_path and hash_distance > self.HASH_DISTANCE_THRESHOLD:
+                # Ensure both images are the same size for diff visualization
+                if img1.size != img2.size:
+                    img2 = img2.resize(img1.size, Image.LANCZOS)
 
-                # Convert original to RGB for overlay
+                # Convert to RGB arrays for visualization
                 img1_rgb = img1.convert("RGB")
-                img1_array = np.array(img1_rgb)
+                img2_rgb = img2.convert("RGB")
+                arr1 = np.array(img1_rgb)
+                arr2 = np.array(img2_rgb)
+
+                # Calculate pixel-wise differences
+                diff = np.abs(arr1.astype(float) - arr2.astype(float))
+                
+                # Normalize difference to 0-255 range
+                max_diff = np.max(diff)
+                if max_diff > 0:
+                    diff_normalized = (diff / max_diff * 255).astype(np.uint8)
+                else:
+                    diff_normalized = diff.astype(np.uint8)
 
                 # Create red overlay where differences exist
-                # diff_image ranges from 0 (different) to 255 (same)
-                # Invert so differences are highlighted
-                mask = 255 - diff_image
+                # Average across color channels to get overall difference
+                diff_gray = np.mean(diff_normalized, axis=2).astype(np.uint8)
 
                 # Create red overlay (semi-transparent)
-                red_overlay = np.zeros_like(img1_array)
-                red_overlay[:, :, 0] = mask  # Red channel
+                red_overlay = np.zeros_like(arr1)
+                red_overlay[:, :, 0] = diff_gray  # Red channel
 
                 # Blend with alpha
                 alpha = 0.6
-                result = img1_array.astype(float)
-                result[:, :, 0] = (1 - alpha) * result[:, :, 0] + alpha * red_overlay[
-                    :, :, 0
-                ]
+                result = arr1.astype(float)
+                result[:, :, 0] = (1 - alpha) * result[:, :, 0] + alpha * red_overlay[:, :, 0]
                 result = result.astype(np.uint8)
 
                 # Save diff image
                 diff_img = Image.fromarray(result)
                 diff_img.save(diff_output_path)
 
-            return similarity_index
+            return hash_distance
         except Exception as e:
             self.log.error(f"Failed to compare screenshots: {e}")
             return None
