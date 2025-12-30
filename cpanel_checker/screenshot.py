@@ -131,6 +131,7 @@ class ScreenshotManager:
             hash2 = imagehash.phash(img2)
 
             # Calculate hash distance (0 = identical, higher = more different)
+            # Convert to int for JSON serialization (numpy.int64 is not JSON serializable)
             hash_distance = int(hash1 - hash2)
 
             # Create diff image if requested and images are different
@@ -157,7 +158,7 @@ class ScreenshotManager:
                     diff_normalized = np.zeros_like(diff, dtype=np.uint8)
 
                 # Create red overlay where differences exist
-                # Average across color channels to get overall difference
+                # Convert RGB difference to grayscale by averaging across color channels
                 diff_gray = np.mean(diff_normalized, axis=2).astype(np.uint8)
 
                 # Create red overlay (semi-transparent)
