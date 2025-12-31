@@ -223,20 +223,20 @@ class SiteChecker:
 
             # Find previous screenshot and compare
             previous_screenshot = self.screenshot_manager.find_previous_screenshot(domain, directory)
-            diff_percentage = None
+            hash_distance = None
             screenshot_kept = True
 
             if previous_screenshot:
                 # Create path for diff image
                 diff_file = png_file.replace('.png', '-diff.png')
 
-                diff_percentage = self.screenshot_manager.compare_screenshots(
+                hash_distance = self.screenshot_manager.compare_screenshots(
                     png_file,
                     previous_screenshot,
                     diff_output_path=diff_file
                 )
 
-                if diff_percentage is not None:
+                if hash_distance is not None:
                     # Extract date+serial from previous screenshot path
                     previous_date_serial = None
                     try:
@@ -249,15 +249,16 @@ class SiteChecker:
                         pass
 
                     # Use threshold to determine if screenshots are identical
-                    if diff_percentage > self.screenshot_manager.SSIM_THRESHOLD:
+                    # Lower hash distance means more similar (opposite of SSIM)
+                    if hash_distance <= self.screenshot_manager.HASH_DISTANCE_THRESHOLD:
                         # Screenshots are identical or nearly identical, delete the new one and diff
                         os.remove(png_file)
                         if os.path.exists(diff_file):
                             os.remove(diff_file)
                         screenshot_kept = False
-                        self.log.info(f"domain={domain} screenshot_similarity={diff_percentage*100:.2f}% action=deleted_identical")
+                        self.log.info(f"domain={domain} screenshot_hash_distance={hash_distance} action=deleted_identical")
                     else:
-                        log_msg = f"domain={domain} screenshot_similarity={diff_percentage*100:.2f}%"
+                        log_msg = f"domain={domain} screenshot_hash_distance={hash_distance}"
                         if previous_date_serial:
                             log_msg += f" previous_run={previous_date_serial}"
                         self.log.info(log_msg)
@@ -270,9 +271,9 @@ class SiteChecker:
                 'digest': digest
             }
 
-            # Only include screenshot_similarity if screenshot was kept
-            if diff_percentage is not None and screenshot_kept:
-                result['screenshot_similarity'] = f"{diff_percentage:.2f}%"
+            # Only include screenshot_hash_distance if screenshot was kept
+            if hash_distance is not None and screenshot_kept:
+                result['screenshot_hash_distance'] = hash_distance
 
             return result
         except Exception as ex:
