@@ -8,6 +8,8 @@ import colorsys
 from PIL import Image
 import imagehash
 import numpy as np
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 class ScreenshotManager:
     """Manages screenshot capture, resizing, and comparison."""
@@ -28,7 +30,7 @@ class ScreenshotManager:
         self.output_dir = output_dir
         self.log = logging.getLogger(__name__)
 
-    def capture_screenshot(self, url, output_path, width=1440, height=2000):
+    def capture_screenshot(self, url, output_path, width=1440, height=2000, buffer_seconds=5):
         """Capture a screenshot of a web page.
 
         Args:
@@ -36,10 +38,32 @@ class ScreenshotManager:
             output_path: Path to save screenshot
             width: Browser window width
             height: Browser window height
+            buffer_seconds: Additional wait time after page load (for animations/transitions)
         """
         self.driver.set_window_size(width, height)
         self.driver.get(url)
-        time.sleep(5)  # Wait for images to fade in
+
+        # Wait for document ready state to be complete (max 30 seconds)
+        try:
+            WebDriverWait(self.driver, 30).until(
+                lambda d: d.execute_script('return document.readyState') == 'complete'
+            )
+        except Exception as e:
+            self.log.warning(f"Timeout waiting for page ready: {e} url: {url}")
+
+        # Wait for all images to be loaded
+        try:
+            WebDriverWait(self.driver, 20).until(
+                lambda d: d.execute_script('''
+                    const images = document.querySelectorAll('img');
+                    return Array.from(images).every(img => img.complete && img.naturalHeight !== 0);
+                ''')
+            )
+        except Exception as e:
+            self.log.warning(f"Timeout waiting for images to load: {e} url: {url}")
+
+        # Additional buffer for animations, fade-ins, lazy loading, etc.
+        time.sleep(buffer_seconds)
         self.driver.save_screenshot(output_path)
 
     def resize_screenshot(self, image_path, width=500):
@@ -148,7 +172,7 @@ class ScreenshotManager:
 
                 # Calculate pixel-wise differences
                 diff = np.abs(arr1.astype(float) - arr2.astype(float))
-                
+
                 # Normalize difference to 0-255 range
                 max_diff = np.max(diff)
                 if max_diff > 0:

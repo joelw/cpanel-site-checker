@@ -4,6 +4,7 @@ import os
 import sys
 import logging
 import hashlib
+import glob
 from datetime import datetime
 from pathlib import Path
 from selenium import webdriver
@@ -103,6 +104,43 @@ class SiteChecker:
             except:
                 pass
 
+    def _find_previous_txt_file(self, user, domain, current_directory):
+        """Find the most recent text file for a domain from previous runs.
+
+        Args:
+            user: cPanel username
+            domain: Domain name
+            current_directory: Current run's directory (to exclude)
+
+        Returns:
+            str: Path to previous text file or None if not found
+        """
+        # Get all text files matching the pattern
+        pattern = os.path.join(self.output_dir, '*', '*', f'{user}-{domain}.txt')
+        matching_files = glob.glob(pattern)
+
+        # Filter out the current directory's file
+        matching_files = [f for f in matching_files if not f.startswith(current_directory)]
+
+        if not matching_files:
+            return None
+
+        # Sort by date extracted from path (YYYYMMDDnn), most recent first
+        def extract_date(path):
+            try:
+                # Extract date from path like './2025122801/...'
+                parts = path.split(os.sep)
+                for part in parts:
+                    # Check for YYYYMMDDnn (10 chars) or legacy YYYYMMDD (8 chars)
+                    if (len(part) == 10 or len(part) == 8) and part[:8].isdigit():
+                        return part
+                return '0000000000'  # Fallback for files without date pattern
+            except:
+                return '0000000000'
+
+        matching_files.sort(key=extract_date, reverse=True)
+        return matching_files[0]
+
     def check_accounts(self, host, hash_key, ip_allowlist=[], date=None):
         """Check all accounts on a WHM server.
 
@@ -167,8 +205,16 @@ class SiteChecker:
                     log_msg += f" location={result['location']}"
                 if 'digest' in result:
                     log_msg += f" digest={result['digest']}"
-                if 'screenshot_diff' in result:
-                    log_msg += f" screenshot_diff={result['screenshot_diff']}"
+                if 'txt_status' in result:
+                    log_msg += f" txt={result['txt_status']}"
+                if 'txt_previous_run' in result:
+                    log_msg += f" txt_previous_run={result['txt_previous_run']}"
+                if 'screenshot_hash_distance' in result:
+                    log_msg += f" screenshot_hash_distance={result['screenshot_hash_distance']}"
+                if 'screenshot_status' in result:
+                    log_msg += f" screenshot={result['screenshot_status']}"
+                if 'screenshot_previous_run' in result:
+                    log_msg += f" screenshot_previous_run={result['screenshot_previous_run']}"
                 self.log.info(log_msg)
 
     def _fetch_page(self, user, domain, directory):
@@ -221,10 +267,44 @@ class SiteChecker:
             # Resize screenshot to 500px width thumbnail
             self.screenshot_manager.resize_screenshot(png_file, width=500)
 
+            # Find previous text file and compare
+            previous_txt_file = self._find_previous_txt_file(user, domain, directory)
+            txt_status = None
+            txt_previous_date_serial = None
+
+            if previous_txt_file:
+                try:
+                    # Read current and previous file contents
+                    with open(html_file, 'r') as f:
+                        current_content = f.read()
+                    with open(previous_txt_file, 'r') as f:
+                        previous_content = f.read()
+
+                    # Compare contents
+                    if current_content == previous_content:
+                        # Contents are identical, delete the new file
+                        os.remove(html_file)
+                        txt_status = 'deleted_duplicate'
+                    else:
+                        txt_status = 'different'
+
+                    # Extract date+serial from previous file path
+                    try:
+                        parts = previous_txt_file.split(os.sep)
+                        for part in parts:
+                            if (len(part) == 10 or len(part) == 8) and part[:8].isdigit():
+                                txt_previous_date_serial = part
+                                break
+                    except:
+                        pass
+                except Exception as e:
+                    self.log.warning(f"Failed to compare txt files for {domain}: {e}")
+
             # Find previous screenshot and compare
             previous_screenshot = self.screenshot_manager.find_previous_screenshot(domain, directory)
             hash_distance = None
-            screenshot_kept = True
+            screenshot_status = None
+            screenshot_previous_date_serial = None
 
             if previous_screenshot:
                 # Create path for diff image
@@ -238,12 +318,11 @@ class SiteChecker:
 
                 if hash_distance is not None:
                     # Extract date+serial from previous screenshot path
-                    previous_date_serial = None
                     try:
                         parts = previous_screenshot.split(os.sep)
                         for part in parts:
                             if (len(part) == 10 or len(part) == 8) and part[:8].isdigit():
-                                previous_date_serial = part
+                                screenshot_previous_date_serial = part
                                 break
                     except:
                         pass
@@ -255,13 +334,9 @@ class SiteChecker:
                         os.remove(png_file)
                         if os.path.exists(diff_file):
                             os.remove(diff_file)
-                        screenshot_kept = False
-                        self.log.info(f"domain={domain} screenshot_hash_distance={hash_distance} action=deleted_identical")
+                        screenshot_status = 'deleted_identical'
                     else:
-                        log_msg = f"domain={domain} screenshot_hash_distance={hash_distance}"
-                        if previous_date_serial:
-                            log_msg += f" previous_run={previous_date_serial}"
-                        self.log.info(log_msg)
+                        screenshot_status = 'different'
 
             # Calculate digest from page text
             digest = hashlib.sha256(page_text.encode('utf-8')).hexdigest()
@@ -271,9 +346,19 @@ class SiteChecker:
                 'digest': digest
             }
 
-            # Only include screenshot_hash_distance if screenshot was kept
-            if hash_distance is not None and screenshot_kept:
+            # Add txt comparison result if available
+            if txt_status:
+                result['txt_status'] = txt_status
+            if txt_previous_date_serial:
+                result['txt_previous_run'] = txt_previous_date_serial
+
+            # Add screenshot comparison results if available
+            if hash_distance is not None and screenshot_status != 'deleted_identical':
                 result['screenshot_hash_distance'] = hash_distance
+            if screenshot_status:
+                result['screenshot_status'] = screenshot_status
+            if screenshot_previous_date_serial:
+                result['screenshot_previous_run'] = screenshot_previous_date_serial
 
             return result
         except Exception as ex:
