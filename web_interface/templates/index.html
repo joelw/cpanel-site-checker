@@ -110,7 +110,7 @@
                                 <h4>Previous (${escapeHtml(change.screenshot_previous_run)})</h4>
                                 <img src="/api/screenshot?path=${encodeURIComponent(prevRelPath)}" 
                                      alt="Previous screenshot" 
-                                     onerror="this.src='/static/placeholder.png'; this.alt='Image not found';">
+                                     onerror="this.style.display='none'; this.parentElement.innerHTML += '<p class=\\'error-message\\'>Image not found</p>'">
                             </div>
                         `;
                     }
@@ -124,7 +124,7 @@
                                 <h4>Current (${escapeHtml(change.current_run)})</h4>
                                 <img src="/api/screenshot?path=${encodeURIComponent(currRelPath)}" 
                                      alt="Current screenshot"
-                                     onerror="this.src='/static/placeholder.png'; this.alt='Image not found';">
+                                     onerror="this.style.display='none'; this.parentElement.innerHTML += '<p class=\\'error-message\\'>Image not found</p>'">
                             </div>
                         `;
                     }
@@ -138,7 +138,7 @@
                                 <h4>Diff</h4>
                                 <img src="/api/screenshot?path=${encodeURIComponent(diffRelPath)}" 
                                      alt="Diff screenshot"
-                                     onerror="this.src='/static/placeholder.png'; this.alt='Image not found';">
+                                     onerror="this.style.display='none'; this.parentElement.innerHTML += '<p class=\\'error-message\\'>Image not found</p>'">
                             </div>
                         `;
                     }
@@ -175,7 +175,7 @@
                 }
                 
                 // Find the change data from cache
-                const change = currentChangesCache.find(c => c.id == changeId);
+                const change = currentChangesCache.find(c => c.id === changeId);
                 
                 if (!change) {
                     diffDiv.innerHTML = '<p class="error-message">Could not load change data</p>';
