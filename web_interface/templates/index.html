@@ -175,7 +175,7 @@
                 }
                 
                 // Find the change data from cache
-                const change = currentChangesCache.find(c => c.id === changeId);
+                const change = currentChangesCache.find(c => c.id === parseInt(changeId, 10));
                 
                 if (!change) {
                     diffDiv.innerHTML = '<p class="error-message">Could not load change data</p>';
