@@ -20,7 +20,11 @@ class DatabaseLogger:
         self._init_database()
 
     def _init_database(self):
-        """Initialize database connection and create tables if needed."""
+        """Initialize database connection and create tables if needed.
+        
+        Note: This creates a single-threaded SQLite connection.
+        The connection should only be used from the thread that created it.
+        """
         try:
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row
@@ -101,7 +105,7 @@ class DatabaseLogger:
             
             self.conn.commit()
         except Exception as e:
-            self.log.error(f"Failed to log check result for {domain}: {e}")
+            self.log.error(f"Failed to log check result for {host}/{user}/{domain}: {e}")
 
     def close(self):
         """Close database connection."""

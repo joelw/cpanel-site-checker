@@ -62,7 +62,11 @@ class SiteChecker:
         
         # Initialize database logger
         db_path = config.get('database', 'site_checker.db')
-        self.db_logger = DatabaseLogger(db_path)
+        try:
+            self.db_logger = DatabaseLogger(db_path)
+        except Exception as e:
+            self.log.error(f"Failed to initialize database logging: {e}")
+            raise
 
     def _get_next_date_serial(self):
         """Generate next date directory with serial number (YYYYMMDDnn).
