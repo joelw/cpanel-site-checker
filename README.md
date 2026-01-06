@@ -9,6 +9,7 @@ currently does the following:
 * Retrieves the text content of the web site and logs it into a file
 * Saves a screenshot of the site
 * Compare the contents of each web site with its previous snapshot
+* **Web interface for viewing changes** (see Web Interface section below)
 
 It will eventually be extended to:
 
@@ -74,4 +75,23 @@ chmod +x site-checker.py
 ./site-checker.py
 ```
 
+Web Interface
+=============
+
+A web interface is available for viewing site check results. It provides:
+
+* Date picker to select dates with changes
+* List of all changed sites for the selected date
+* Side-by-side screenshot comparisons (Previous, Current, Diff)
+* Text diff viewer with toggle functionality
+
+The web interface is located in the `web_interface/` directory and is a separate application that does not share code with the checker process. See `web_interface/README.md` for installation and usage instructions.
+
+Quick start:
+```bash
+cd web_interface
+pip install -r requirements.txt
+python app.py
+# Open browser to http://localhost:8000
+```
 
