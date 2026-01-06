@@ -8,4 +8,5 @@ venv/
 ENV/
 env/
 .venv
+*.db
 

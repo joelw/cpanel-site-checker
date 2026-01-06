@@ -2,6 +2,7 @@
 :config:
   :output_dir: .
   :logfile: log.txt
+  :database: site_checker.db
 :servers:
 - :host: vps1.example.com
   :hash: 123456789abcdef
