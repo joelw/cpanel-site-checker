@@ -34,6 +34,32 @@ Installation
 * Create an API Token in WHM - not entirely sure which permissions are needed yet
 * Copy servers.yml.sample to servers.yml file and fill in the blanks
 
+Database Logging
+================
+
+The application logs all check results to a SQLite database in addition to the text file output. 
+This enables future web interface functionality for viewing changes over time.
+
+The database file location can be configured in servers.yml:
+```yaml
+:config:
+  :database: site_checker.db  # defaults to site_checker.db if not specified
+```
+
+The database contains a `check_results` table with the following columns:
+* `timestamp` - ISO 8601 timestamp of the check
+* `host` - WHM server hostname
+* `user` - cPanel username
+* `domain` - Domain name
+* `code` - HTTP status code or error message
+* `location` - Final URL after redirects
+* `digest` - SHA256 hash of page content
+* `txt_status` - Text comparison status (different/deleted_duplicate)
+* `txt_previous_run` - Previous run date serial
+* `screenshot_hash_distance` - Perceptual hash distance between screenshots
+* `screenshot_status` - Screenshot comparison status (different/deleted_identical)
+* `screenshot_previous_run` - Previous run date serial for screenshot
+
 Usage
 =====
 

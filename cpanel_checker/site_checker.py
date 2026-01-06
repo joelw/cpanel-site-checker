@@ -13,6 +13,7 @@ from selenium.webdriver.chrome.options import Options
 from .whm_api import WhmApiClient
 from .domain_validator import DomainValidator
 from .screenshot import ScreenshotManager
+from .database import DatabaseLogger
 
 
 class SiteChecker:
@@ -58,6 +59,14 @@ class SiteChecker:
 
         # Initialize components
         self.screenshot_manager = ScreenshotManager(self.driver, self.output_dir)
+        
+        # Initialize database logger
+        db_path = config.get('database', 'site_checker.db')
+        try:
+            self.db_logger = DatabaseLogger(db_path)
+        except Exception as e:
+            self.log.error(f"Failed to initialize database logging: {e}")
+            raise
 
     def _get_next_date_serial(self):
         """Generate next date directory with serial number (YYYYMMDDnn).
@@ -101,7 +110,12 @@ class SiteChecker:
         if hasattr(self, 'driver'):
             try:
                 self.driver.quit()
-            except:
+            except Exception:
+                pass
+        if hasattr(self, 'db_logger'):
+            try:
+                self.db_logger.close()
+            except Exception:
                 pass
 
     def _find_previous_txt_file(self, user, domain, current_directory):
@@ -216,6 +230,9 @@ class SiteChecker:
                 if 'screenshot_previous_run' in result:
                     log_msg += f" screenshot_previous_run={result['screenshot_previous_run']}"
                 self.log.info(log_msg)
+                
+                # Log to database
+                self.db_logger.log_check_result(host, username, dom, result)
 
     def _fetch_page(self, user, domain, directory):
         """Fetch a single page and take screenshot.
