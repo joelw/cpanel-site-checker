@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cPanel Site Checker - Change List</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>cPanel Site Checker - Change List</h1>
+        </header>
+        
+        <div class="date-picker">
+            <label for="date-select">Select Date:</label>
+            <select id="date-select" onchange="loadChanges()">
+                {% for date in available_dates %}
+                <option value="{{ date }}" {% if date == default_date %}selected{% endif %}>
+                    {{ date }}
+                </option>
+                {% endfor %}
+            </select>
+            <span id="loading-indicator" style="display: none;">Loading...</span>
+        </div>
+        
+        <div id="changes-container">
+            <p class="info-message">Select a date to view changes</p>
+        </div>
+    </div>
+    
+    <script>
+        // Load changes when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            loadChanges();
+        });
+        
+        async function loadChanges() {
+            const dateSelect = document.getElementById('date-select');
+            const selectedDate = dateSelect.value;
+            const container = document.getElementById('changes-container');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            
+            if (!selectedDate) {
+                container.innerHTML = '<p class="info-message">No dates available</p>';
+                return;
+            }
+            
+            // Show loading indicator
+            loadingIndicator.style.display = 'inline';
+            container.innerHTML = '<p class="info-message">Loading changes...</p>';
+            
+            try {
+                const response = await fetch(`/api/changes/${selectedDate}`);
+                const data = await response.json();
+                
+                if (data.changes.length === 0) {
+                    container.innerHTML = '<p class="info-message">No changes found for this date</p>';
+                } else {
+                    container.innerHTML = renderChanges(data.changes);
+                }
+            } catch (error) {
+                console.error('Error loading changes:', error);
+                container.innerHTML = '<p class="error-message">Error loading changes. Please try again.</p>';
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+        
+        function renderChanges(changes) {
+            let html = '<div class="changes-list">';
+            
+            for (const change of changes) {
+                html += `
+                    <div class="change-item">
+                        <div class="change-header">
+                            <h2>${escapeHtml(change.domain)}</h2>
+                            <div class="change-meta">
+                                <span><strong>Host:</strong> ${escapeHtml(change.host)}</span>
+                                <span><strong>User:</strong> ${escapeHtml(change.user)}</span>
+                                <span><strong>Time:</strong> ${formatTimestamp(change.timestamp)}</span>
+                                <span><strong>Status:</strong> ${escapeHtml(change.code || 'N/A')}</span>
+                            </div>
+                        </div>
+                `;
+                
+                // Screenshot section
+                if (change.screenshot_status === 'different') {
+                    html += '<div class="screenshot-section">';
+                    html += '<h3>Screenshot Changes</h3>';
+                    
+                    if (change.screenshot_hash_distance !== null) {
+                        html += `<p class="hash-distance">Hash Distance: ${change.screenshot_hash_distance}</p>`;
+                    }
+                    
+                    html += '<div class="screenshot-grid">';
+                    
+                    // Previous screenshot
+                    if (change.screenshots.previous) {
+                        const prevPath = change.screenshots.previous.replace(/\\/g, '/');
+                        const prevRelPath = prevPath.substring(prevPath.indexOf(change.screenshot_previous_run));
+                        html += `
+                            <div class="screenshot-item">
+                                <h4>Previous (${escapeHtml(change.screenshot_previous_run)})</h4>
+                                <img src="/api/screenshot?path=${encodeURIComponent(prevRelPath)}" 
+                                     alt="Previous screenshot" 
+                                     onerror="this.src='/static/placeholder.png'; this.alt='Image not found';">
+                            </div>
+                        `;
+                    }
+                    
+                    // Current screenshot
+                    if (change.screenshots.current) {
+                        const currPath = change.screenshots.current.replace(/\\/g, '/');
+                        const currRelPath = currPath.substring(currPath.indexOf(change.current_run));
+                        html += `
+                            <div class="screenshot-item">
+                                <h4>Current (${escapeHtml(change.current_run)})</h4>
+                                <img src="/api/screenshot?path=${encodeURIComponent(currRelPath)}" 
+                                     alt="Current screenshot"
+                                     onerror="this.src='/static/placeholder.png'; this.alt='Image not found';">
+                            </div>
+                        `;
+                    }
+                    
+                    // Diff screenshot
+                    if (change.screenshots.diff) {
+                        const diffPath = change.screenshots.diff.replace(/\\/g, '/');
+                        const diffRelPath = diffPath.substring(diffPath.indexOf(change.current_run));
+                        html += `
+                            <div class="screenshot-item">
+                                <h4>Diff</h4>
+                                <img src="/api/screenshot?path=${encodeURIComponent(diffRelPath)}" 
+                                     alt="Diff screenshot"
+                                     onerror="this.src='/static/placeholder.png'; this.alt='Image not found';">
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div></div>'; // Close screenshot-grid and screenshot-section
+                }
+                
+                // Text diff section
+                if (change.txt_status === 'different') {
+                    html += '<div class="text-section">';
+                    html += '<h3>Text Changes</h3>';
+                    html += `<button class="toggle-btn" onclick="toggleTextDiff('${change.id}')">Show Text Diff</button>`;
+                    html += `<div id="textdiff-${change.id}" class="text-diff" style="display: none;">`;
+                    html += '<p class="info-message">Loading text diff...</p>';
+                    html += '</div></div>';
+                }
+                
+                html += '</div>'; // Close change-item
+            }
+            
+            html += '</div>'; // Close changes-list
+            return html;
+        }
+        
+        async function toggleTextDiff(changeId) {
+            const diffDiv = document.getElementById(`textdiff-${changeId}`);
+            
+            if (diffDiv.style.display === 'none') {
+                diffDiv.style.display = 'block';
+                
+                // Load text diff if not already loaded
+                if (diffDiv.classList.contains('loaded')) {
+                    return;
+                }
+                
+                // Find the change data to get file paths
+                const response = await fetch(`/api/changes/${document.getElementById('date-select').value}`);
+                const data = await response.json();
+                const change = data.changes.find(c => c.id == changeId);
+                
+                if (!change) {
+                    diffDiv.innerHTML = '<p class="error-message">Could not load change data</p>';
+                    return;
+                }
+                
+                try {
+                    const currentPath = change.text_files.current?.replace(/\\/g, '/');
+                    const previousPath = change.text_files.previous?.replace(/\\/g, '/');
+                    
+                    if (!currentPath) {
+                        diffDiv.innerHTML = '<p class="info-message">No current text file available</p>';
+                        return;
+                    }
+                    
+                    // Extract relative paths
+                    const currRelPath = currentPath.substring(currentPath.indexOf(change.current_run));
+                    const prevRelPath = previousPath ? previousPath.substring(previousPath.indexOf(change.txt_previous_run)) : null;
+                    
+                    let url = `/api/textdiff?current_path=${encodeURIComponent(currRelPath)}`;
+                    if (prevRelPath) {
+                        url += `&previous_path=${encodeURIComponent(prevRelPath)}`;
+                    }
+                    
+                    const textResponse = await fetch(url);
+                    const textData = await textResponse.json();
+                    
+                    let html = '<div class="text-comparison">';
+                    
+                    if (textData.previous) {
+                        html += `
+                            <div class="text-column">
+                                <h4>Previous (${escapeHtml(change.txt_previous_run)})</h4>
+                                <pre class="text-content">${escapeHtml(textData.previous)}</pre>
+                            </div>
+                        `;
+                    }
+                    
+                    if (textData.current) {
+                        html += `
+                            <div class="text-column">
+                                <h4>Current (${escapeHtml(change.current_run)})</h4>
+                                <pre class="text-content">${escapeHtml(textData.current)}</pre>
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div>';
+                    diffDiv.innerHTML = html;
+                    diffDiv.classList.add('loaded');
+                } catch (error) {
+                    console.error('Error loading text diff:', error);
+                    diffDiv.innerHTML = '<p class="error-message">Error loading text diff</p>';
+                }
+            } else {
+                diffDiv.style.display = 'none';
+            }
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            return date.toLocaleString();
+        }
+    </script>
+</body>
+</html>
