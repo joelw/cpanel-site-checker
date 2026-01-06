@@ -106,12 +106,12 @@ class SiteChecker:
         if hasattr(self, 'driver'):
             try:
                 self.driver.quit()
-            except:
+            except Exception:
                 pass
         if hasattr(self, 'db_logger'):
             try:
                 self.db_logger.close()
-            except:
+            except Exception:
                 pass
 
     def _find_previous_txt_file(self, user, domain, current_directory):
