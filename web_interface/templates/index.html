@@ -30,6 +30,9 @@
     </div>
     
     <script>
+        // Cache for current changes data
+        let currentChangesCache = [];
+        
         // Load changes when page loads
         window.addEventListener('DOMContentLoaded', () => {
             loadChanges();
@@ -53,6 +56,9 @@
             try {
                 const response = await fetch(`/api/changes/${selectedDate}`);
                 const data = await response.json();
+                
+                // Cache the changes data
+                currentChangesCache = data.changes;
                 
                 if (data.changes.length === 0) {
                     container.innerHTML = '<p class="info-message">No changes found for this date</p>';
@@ -168,10 +174,8 @@
                     return;
                 }
                 
-                // Find the change data to get file paths
-                const response = await fetch(`/api/changes/${document.getElementById('date-select').value}`);
-                const data = await response.json();
-                const change = data.changes.find(c => c.id == changeId);
+                // Find the change data from cache
+                const change = currentChangesCache.find(c => c.id == changeId);
                 
                 if (!change) {
                     diffDiv.innerHTML = '<p class="error-message">Could not load change data</p>';
