@@ -1,0 +1,13 @@
+servers.yml
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv
+.git/
+pyproject.toml
+uv.lock
