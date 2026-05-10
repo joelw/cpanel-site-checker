@@ -10,3 +10,5 @@ env/
 .venv
 *.db
 
+.vercel
+2*/
