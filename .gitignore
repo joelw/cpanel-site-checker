@@ -9,4 +9,6 @@ ENV/
 env/
 .venv
 *.db
+2026*/
+test_*.db
 
